@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -165,10 +166,60 @@ func createNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateNote(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if !bson.IsObjectIdHex(id) {
+		log.Printf("invalid id")
+		rnd.JSON(w, http.StatusBadRequest, renderer.M{
+			"message": "invalid id",
+		})
+		return
+	}
+
+	n := &Note{}
+	if err := json.NewDecoder(r.Body).Decode(n); err != nil {
+		rnd.JSON(w, http.StatusProcessing, renderer.M{
+			"message": "decode body failed",
+			"error":   err,
+		})
+		return
+	}
+
+	if err := db.C(collectionName).Update(
+		bson.M{"_id": bson.ObjectIdHex(id)},
+		bson.M{
+			"title":          n.Title,
+			"last_edit_time": time.Now(),
+			"content":        n.Content,
+		},
+	); err != nil {
+		rnd.JSON(w, http.StatusBadGateway, renderer.M{
+			"message": "failed to update note",
+			"error":   err,
+		})
+	}
 }
 
 func deleteNote(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if !bson.IsObjectIdHex(id) {
+		rnd.JSON(w, http.StatusBadRequest, renderer.M{
+			"message": "invalid id",
+		})
+		return
+	}
 
+	if err := db.C(collectionName).RemoveId(bson.ObjectIdHex(id)); err != nil {
+		log.Printf("delete id:%s failed", id)
+		rnd.JSON(w, http.StatusProcessing, renderer.M{
+			"message": "failed to delete note by id",
+			"error":   err,
+		})
+		return
+	}
+
+	rnd.JSON(w, http.StatusOK, renderer.M{
+		"message": "deleted note",
+	})
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {

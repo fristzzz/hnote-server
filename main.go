@@ -25,7 +25,6 @@ const (
 	dbName         = "hnote"
 	collectionName = "notes"
 	port           = ":443"
-	testPort       = ":8080"
 	certFile       = "cert.pem"
 	keyFile        = "key.pem"
 )
@@ -42,7 +41,7 @@ type (
 
 	// Note bson 数据
 	NoteModel struct {
-		ID           bson.ObjectId `bson:"_id, omitempty"`
+		ID           bson.ObjectId `bson:"_id"`
 		Title        string        `bson:"title"`
 		CreateDate   time.Time     `bson:"create_date"`
 		LastEditDate time.Time     `bson:"last_edit_time"`
@@ -73,15 +72,12 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	// /note路径处理笔记的增删改查
-	r.Get("/note/get", getNote)
-	r.Post("/note/create", createNote)
-	r.Delete("/note/delete", deleteNote)
-	r.Put("/note/update", updateNote)
+
 	r.Get("/", homeHandler)
+	r.Mount("/note", noteHandlers())
 
 	srv := &http.Server{
-		//Addr:         port,
-		Addr:         testPort,
+		Addr:         port,
 		Handler:      r,
 		ReadTimeout:  60 * time.Second,
 		WriteTimeout: 60 * time.Second,
@@ -92,16 +88,16 @@ func main() {
 		log.Printf("listening on port: %s\n", srv.Addr)
 
 		// 测试用http
-		if err := srv.ListenAndServe(); err != nil {
-			log.Printf("listen: %s\n", err)
-			return
-		}
+		//if err := srv.ListenAndServe(); err != nil {
+		//	log.Printf("listen: %s\n", err)
+		//	return
+		//}
 
 		// 需要将cert.pem 和 key.pem 文件放在主文件同一目录下
-		//		if err := srv.ListenAndServeTLS(certFile, keyFile); err != nil {
-		//			log.Printf("error occurs running server: %s\n", err)
-		//			return
-		//		}
+		if err := srv.ListenAndServeTLS(certFile, keyFile); err != nil {
+			log.Printf("error occurs running server: %s\n", err)
+			return
+		}
 	}()
 
 	<-stopServer
@@ -115,23 +111,41 @@ func main() {
 	srv.Shutdown(ctx)
 }
 
-func getNote(w http.ResponseWriter, r *http.Request) {
+func getNotes(w http.ResponseWriter, r *http.Request) {
+	notes := []NoteModel{}
+
+	if err := db.C(collectionName).Find(bson.M{}).All(&notes); err != nil {
+		log.Printf("notes getting failed: %+v", err)
+		rnd.JSON(w, http.StatusBadRequest, "notes fetch failed")
+	}
+
+	noteList := make([]Note, 0)
+	for _, n := range notes {
+		noteList = append(noteList, Note{
+			ID:           n.ID.Hex(),
+			Title:        n.Title,
+			Content:      n.Content,
+			CreateDate:   n.CreateDate,
+			LastEditDate: n.LastEditDate,
+		})
+	}
+	rnd.JSON(w, http.StatusOK, renderer.M{
+		"data": noteList,
+	})
 }
 
 func createNote(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("creating"))
 	n := &Note{}
 	if err := json.NewDecoder(r.Body).Decode(n); err != nil {
 		log.Printf("erroer decoding json: %+v", err)
-		w.Write([]byte("error decode json"))
-		//rnd.JSON(w, http.StatusProcessing, err)
+		rnd.JSON(w, http.StatusProcessing, err)
 		return
 	}
 
 	nm := &NoteModel{
 		ID:           bson.NewObjectId(),
-		CreateDate:   n.CreateDate,
-		LastEditDate: n.LastEditDate,
+		CreateDate:   time.Now(),
+		LastEditDate: time.Now(),
 		Content:      n.Content,
 		Title:        n.Title,
 	}
@@ -159,4 +173,15 @@ func deleteNote(w http.ResponseWriter, r *http.Request) {
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("hello! this is hnote"))
+}
+
+func noteHandlers() http.Handler {
+	rg := chi.NewRouter()
+	rg.Group(func(r chi.Router) {
+		r.Get("/", getNotes)
+		r.Post("/", createNote)
+		r.Delete("/{id}", deleteNote)
+		r.Put("/{id}", updateNote)
+	})
+	return rg
 }

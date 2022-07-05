@@ -24,7 +24,7 @@ var rnd renderer.Render
 const (
 	hostName       = "localhost:27017"
 	dbName         = "hnote"
-	collectionName = "notes"
+	collectionName = "user1"
 	port           = ":443"
 	certFile       = "cert.pem"
 	keyFile        = "key.pem"
@@ -106,6 +106,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer func() {
 		// 后续处理
+		// ...
 
 		cancel()
 	}()
@@ -226,6 +227,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("hello! this is hnote"))
 }
 
+// 路由注册
 func noteHandlers() http.Handler {
 	rg := chi.NewRouter()
 	rg.Group(func(r chi.Router) {
